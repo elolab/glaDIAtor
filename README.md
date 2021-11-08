@@ -13,11 +13,11 @@ glaDIAtor is a software package for analyzing mass spectrometry data acquired us
 
 glaDIAtor is designed to run under container technologies such as Docker and Podman. Container technologies enable running glaDIAtor under multiple platforms (x64). These instructions are written for Linux operating system, which we recommend for running glaDIAtor.
 
-Following folders are required on the machine:
+The following folders are required:
 1) A folder for input files such as raw data and sequence database files (/data here).
 2) A folder for storing analysis results and intermediate files (/run-files here)
 
-First, Download glaDIAtor container from Docker Hub.
+First, download glaDIAtor container from Docker Hub.
 
 ```
 $ docker pull elolab/gladiator
