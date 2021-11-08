@@ -7,7 +7,7 @@
 
 ## Description
 
-glaDIAtor is a software package for analyzing mass spectrometry data acquired using *data independent acquisition* (DIA) mode. It runs on x86/64 platforms supported by Docker. Having at least 128 GB RAM is recommended running the example dataset presented in this Documentation.
+glaDIAtor is a software package for analyzing mass spectrometry data acquired using *data independent acquisition* (DIA) mode. It enables untargeted analysis of DIA proteomics and metaproteomics data without the need for any DDA data. The glaDIAtor software runs on x86/64 platforms supported by Docker. Having at least 128 GB RAM is recommended for running the example dataset presented in this Documentation.
 
 ## Installation
 
