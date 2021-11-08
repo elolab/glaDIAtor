@@ -1,0 +1,1123 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta>
+<meta charset="UTF-8">
+</meta>
+
+<head>
+
+  <link rel="stylesheet" href="fontawesome-free-5.8.1-web/css/all.css">
+  <link type="text/css" rel="stylesheet" href="vue/bootstrap.min.css" />
+  <link type="text/css" rel="stylesheet" href="vue/bootstrap-vue.min.css" />
+
+  <script src="vue/vue.min.js"></script>
+  <script src="vue/bootstrap-vue.min.js"></script>
+  <script src="plotly/plotly-latest.min.js"></script>
+
+
+</head>
+
+<style>
+  /*
+.modal-header
+ {
+     background-color: #2e2f30;
+ }
+ */
+
+  .borderbox {
+    border-style: solid;
+    border-radius: 5px;
+    border-color: rgb(209, 209, 189);
+  }
+</style>
+
+<body>
+
+  <div id="ui-app">
+
+    <div>
+      <b-navbar variant:dark toggleable="lg" type="dark" variant="primary">
+        <h1 class="ml-0" style="color:white">
+          <img src="glaDIAtor_white.png" style="width:48px;height:48px">
+          glaDIAtor
+        </h1>
+    </div>
+
+    <b-tabs card>
+      <b-tab title="Analysis" active>
+        <b-container class="mt-2 ml-0">
+          <b-row>
+            <b-col cols="8">
+
+              <div id="sample-file-browser-component" class="mb-4">
+                <file-browser filesetname="samples" title="Spectrum files (DIA data)"
+                  description="Spectrum DIA data files to be analyzed. " filelist_desc="Filenames (DIA)">
+                </file-browser>
+              </div>
+              
+              <div id="library-file-browser-component" class="mb-4" v-if="selected.includes('dda_library')">
+                <file-browser filesetname="library" title="Spectrum files for library (DDA data)"
+                  description="Spectrum DDA files to be used for building the spectral library."
+                  filelist_desc="Filenames (DDA)">
+                </file-browser>
+              </div>
+
+              <div id="database-file-browser-component" class="mb-4">
+                <file-browser filesetname="database" title="Protein sequence files (FASTA files)"
+                  description="Protein sequence FASTA files to be used as the peptide search space. It is recommended to include iRT peptides, digestion enzyme and other possible contaminants like human proteins in addition to the actual proteins to be searched."
+                  filelist_desc="Filenames (FASTA)">
+                </file-browser>
+              </div>
+
+              <div class="card" v-if="selected.includes('annotate_peptides')" >
+                <div class="card-header font-weight-bold">
+                  Annotation
+                </div>
+                <div class="card-body">
+
+                  <div class="mb-4">
+
+                    <strong>Annotation file</strong> <i class="fas fa-info-circle" v-b-tooltip.hover
+                      title="Choose a tsv file having an ID field matching to fasta header with multiple additional fields for annotations for the protein."></i>
+                    <b-input-group class="mb-3">
+                      <b-form-input readonly v-model="annotation_config['filename']">
+                      </b-form-input>
+                      <b-input-group-append>
+                        <b-button variant="primary" v-b-modal.browsermodal> <i class="fas fa-file-import"></i>
+                          Choose File
+                        </b-button>
+                        <b-button variant="warning" @click="annotation_config['filename']=null">
+                          <i class="fas fa-broom"></i> Clear
+                        </b-button>
+                      </b-input-group-append>
+                    </b-input-group>
+                    <div v-if="annotation_config['tsv_id_options']">
+                      <strong>Annotation ID field</strong> <i class="fas fa-info-circle" v-b-tooltip.hover
+                        title="Select ID field matching to database FASTA headers. The field values are used to match header and annotations."></i>
+                      <b-form-select v-model="annotation_config['tsv_id_selected']"
+                        :options="annotation_config['tsv_id_options']">
+                      </b-form-select>
+                    </div>
+                    <single-file-selector @callback="callback" title="Annotation file (tsv)">
+                    </single-file-selector>
+                  </div>
+
+                  <input type="checkbox" v-model="annotation_config['assign_ambiguous']"> Assign ambiguous label <i
+                    class="fas fa-info-circle" v-b-tooltip.hover
+                    title="Label peptides with multiple conflicting annotations as ambiguous instead of listing all the annotations."></i>
+                  <br>
+                  <input type="checkbox" v-model="annotation_config['merge_unimods']" disabled> Merge unimods <i
+                    class="fas fa-info-circle" v-b-tooltip.hover
+                    title="Merge peptides having the same sequence together. (unimplemented currently)"></i>
+                </div>
+              </div>
+
+              <div class="mb-4 ml-3">
+                <b-button block variant="primary" v-on:click="run()"> <i class="fas fa-cogs"></i> Run Analysis
+                </b-button>
+              </div>
+
+
+            </b-col>
+
+
+            <b-col cols="4">
+
+              <div class="card">
+                <div class="card-header font-weight-bold">
+                  Settings
+                </div>
+                <div class="card-body">
+
+                  <div class="mt-0">
+                    <label for="analysis-name-input">Analysis name</label>
+                    <i class="fas fa-info-circle" v-b-tooltip.hover
+                      title="Give an unique name for analysis results. If this field is left empty an unique identifier is autogenerated."></i>
+                    <b-form-input placeholder="automatically generated" v-model="analysis_name" id="project-name-input"
+                      :state="this.no_forbidden_characters(this.analysis_name)" aria-describedby="project-name-feedback"
+                      trim>
+                    </b-form-input>
+
+                    <b-form-invalid-feedback id="project-name-feedback">
+                      Project name can not contain special characters such as * / and spaces.
+                    </b-form-invalid-feedback>
+                  </div>
+
+                  <b-form-group class="mt-4">
+                    <b-form-checkbox-group v-model="selected" :options="options" stacked>
+                    </b-form-checkbox-group>
+                  </b-form-group>
+
+                  <div class="mt-4" v-if="selected.includes('force_threads')" >
+                    <label for="tolerance-input">Threads</label>
+                    <i class="fas fa-info-circle" v-b-tooltip.hover
+                      title="CPU threads used in computation."></i>
+                    <b-form-input v-model="threads" id="threads"
+                      :state="this.isPositiveNaturalNumber(this.threads)" aria-describedby="threads" trim>
+                    </b-form-input>
+
+                    <b-form-invalid-feedback id="Threads">
+                      Enter positive integer.
+                    </b-form-invalid-feedback>
+                  </div>
+
+                  <div class="mt-4">
+                    <label for="pvalue-input">Spectral library building FDR</label>
+                    <i class="fas fa-info-circle" v-b-tooltip.hover
+                      title="False discovery rate cutoff to be used for spectral library building [default 0.01]."></i>
+                    <b-form-input v-model="pvalue" id="pvalue-input" :state="this.isPvalue(this.pvalue)"
+                      aria-describedby="input-live-feedback" trim>
+                    </b-form-input>
+
+                    <b-form-invalid-feedback id="input-live-feedback">
+                      Enter numeric p value between 0 and 1. Default 0.01.
+                    </b-form-invalid-feedback>
+                  </div>
+
+                  <div class="mt-4">
+                    <label for="pvalue-input">Target FDR for TRIG alignment</label>
+                    <i class="fas fa-info-circle" v-b-tooltip.hover
+                      title="Target FDR used in TRIG alignment in dirT mode [default 0.01]."></i>
+                    <b-form-input v-model="trig_target_pvalue" id="trig_target_pvalue-input"
+                      :state="this.isPvalue(this.trig_target_pvalue)" aria-describedby="trig-target-pvalue-feedback"
+                      trim>
+                    </b-form-input>
+
+                    <b-form-invalid-feedback id="trig-target-pvalue-feedback">
+                      Enter numeric p value between 0 and 1. Default 0.01.
+                    </b-form-invalid-feedback>
+                  </div>
+
+                  <div class="mt-4">
+                    <label for="pvalue-input">Maximum FDR for TRIG alignment</label>
+                    <i class="fas fa-info-circle" v-b-tooltip.hover
+                      title="Maximum FDR for TRIG alignment in dirT mode [default 0.05]."></i>
+                    <b-form-input v-model="trig_max_pvalue" id="trig_max_pvalue-input"
+                      :state="this.isPvalue(this.trig_max_pvalue)" aria-describedby="trig-max-pvalue-feedback" trim>
+                    </b-form-input>
+
+                    <b-form-invalid-feedback id="trig-max-pvalue-feedback">
+                      Enter numeric p value between 0 and 1. Default 0.05.
+                    </b-form-invalid-feedback>
+                  </div>
+
+                  <div class="mt-4">
+                    <label for="tolerance-input">Precursor tolerance (ppm)</label>
+                    <i class="fas fa-info-circle" v-b-tooltip.hover
+                      title="Q-Exactive orbitrap:10,TripleTOF 5600 Q Exactive: unknown."></i>
+                    <b-form-input v-model="precursor_tolerance" id="precursor_tolerance"
+                      :state="this.isNumeric(this.precursor_tolerance)" aria-describedby="precursor_tolerance" trim>
+                    </b-form-input>
+
+                    <b-form-invalid-feedback id="precursor_tolerance">
+                      Enter numeric value.
+                    </b-form-invalid-feedback>
+                  </div>
+
+                  <div class="mt-4">
+                    <label for="tolerance-input">Fragment tolerance (Da)</label>
+                    <i class="fas fa-info-circle" v-b-tooltip.hover
+                      title="Q-Exactive orbitrap:0.02,TripleTOF 5600 Q Exactive: 0.03."></i>
+                    <b-form-input v-model="fragment_tolerance" id="fragment_tolerance"
+                      :state="this.isNumeric(this.fragment_tolerance)" aria-describedby="fragment_tolerance" trim>
+                    </b-form-input>
+
+                    <b-form-invalid-feedback id="fragment_tolerance">
+                      Enter numeric value.
+                    </b-form-invalid-feedback>
+                  </div>
+
+                </div>
+              </div>
+
+              <div v-for="project in Object.keys(progress)" class="card mb-4 ml-0" v-if="isAnalysisRunning(project)">
+                <div class="card-header bg-danger text-white font-weight-bold">
+                  <b-spinner type="grow" small></b-spinner> Analysis Running ({{project}})
+                  <b-button size="sm" variant="danger" style="float: right;" v-b-tooltip.hover title="Cancel Analysis"
+                    v-on:click="cancel_analysis(project)">
+                    <i class="fas fa-power-off"></i>
+                  </b-button>
+                </div>
+                <div class="card-body">
+                  <div v-for="entry in progress[project]['analysis']['phases']" class="mb-4">
+                    <div v-if="entry['type']=='percentage-indicator'">
+                      <h5>{{ entry['name'] }}</h5>
+                      <b-progress :value="entry['percentage']" show-progress variant="success"
+                        :striped="entry['status'] != 'ready' ? true : false"
+                        :animated="entry['status'] != 'ready' ? true : false">
+                      </b-progress>
+                    </div>
+                    <div v-else>
+                      <p>ERROR: Unknown indicator type.</p>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+
+            </b-col>
+          </b-row>
+
+
+        </b-container>
+
+      </b-tab>
+
+      <b-tab title="Results">
+
+        <b-row>
+          <b-col cols="12">
+            <div class="card mt-2 mb-1" border-variant="danger" v-for="project in this.projects">
+              <div class="card-header font-weight-bold">
+ 
+                <i v-if="isAnalysisRunning(project.folder)" class="fas fa-spinner"></i>
+                <i v-else-if="project['complete'] == true" class="fas fa-thumbs-up"></i>
+                <i v-else class="fas fa-thumbs-down"></i>
+                {{ project['folder'] }}
+
+                <b-button-group v-if="!isAnalysisRunning(project.folder)" style="float: right;">
+
+                  <b-button v-if="project.folder in annotations && project['complete'] == false" size="sm" variant="warning"
+                    @click="rerun(project.folder)">
+                    <i class="fas fa-cogs"></i> Re-Run
+                  </b-button>
+
+                  <b-button v-if="project.folder in annotations && project['complete'] == true" size="sm"
+                    @click="load_config(project.folder)">
+                    <i class="fas fa-level-up-alt"></i> Load Config
+                  </b-button>
+
+                  <b-dropdown size="sm" text="Download">
+                    <b-dropdown-item v-bind:href="project['fullname'] + '/DIA-peptide-matrix.tsv'">Identifications & intensities (peptides)
+                    </b-dropdown-item>
+		    <b-dropdown-item v-bind:href="project['fullname'] + '/DIA-protein-matrix.tsv'">Identifications & intensities (proteins)
+                    </b-dropdown-item>
+                    <b-dropdown-divider v-if="project['annotated']"></b-dropdown-divider>
+                    <b-dropdown-item v-if="project['annotated']" v-bind:href="project['fullname'] + '/matrix.tsv'">
+                      Peptide matrix</b-dropdown-item>
+                    <b-dropdown-item v-if="project['annotated']" v-bind:href="project['fullname'] + '/annotations.tsv'">
+                      Annotations</b-dropdown-item>
+                    <b-dropdown-divider></b-dropdown-divider>
+                    <b-dropdown-item v-bind:href="project['fullname'] + '/log.txt'">
+                      Runlog</b-dropdown-item>
+                  </b-dropdown>
+                  <b-button v-if="project['figures']" v-b-toggle="'collapse-' + project['folder']" size="sm" >
+                    <i class="fas fa-file-image"></i> Visualize
+                  </b-button>
+                  <b-button size="sm" variant="danger" @click="remove_analysisfolder(project['folder'])"><i
+                      class="fas fa-trash-alt"></i> Delete
+                  </b-button>
+                </b-button-group>
+              </div>
+
+              
+              <b-collapse :id="'collapse-' + project['folder']" class="mt-2">
+                <div v-if="project['figures']" class=card-body>
+
+                  <b-form-select 
+                    v-model="annotations[project['folder']]['chosen_key']" 
+                    :options="Object.keys(project['figures'])"
+                    v-on:change="render_figure(project['folder'], annotations[project['folder']]['chosen_key'])"
+                    >
+                  </b-form-select>
+
+                  <div v-if="annotations[project['folder']]['chosen_key']">
+
+                    <h1 style="text-align:center;">All samples</h1>
+
+                    <div v-if="'pieplot' in project['figures'][annotations[project['folder']]['chosen_key']]"
+                    class="embed-responsive embed-responsive-1by1">
+                      <iframe id="frame2" class="embed-responsive-item" :src="project['figures'][annotations[project['folder']]['chosen_key']]['pieplot']"></iframe>
+                    </div>
+
+                    <h1 style="text-align:center;">Per sample</h1>
+
+                    <div v-if="'barplot' in project['figures'][annotations[project['folder']]['chosen_key']]"
+                    class="embed-responsive embed-responsive-1by1">
+                      <iframe id="frame2" class="embed-responsive-item" :src="project['figures'][annotations[project['folder']]['chosen_key']]['barplot']"></iframe>
+                    </div>
+
+                  </div>
+
+                  <!--
+                  <div v-if="annotations[project['folder']]['chosen_key']" class="embed-responsive embed-responsive-1by1">
+                    <div v-if="'barplot' in project['figures'][annotations[project['folder']]['chosen_key']]">
+                      <a :href="project['figures'][annotations[project['folder']]['chosen_key']]['barplot']"> Samples </a>
+                    </div>
+                  </div>
+                  -->
+
+                </div>
+              </b-collapse>
+
+            </div>
+          </b-col>
+
+        </b-row>
+
+
+
+
+      </b-tab>
+      
+    </b-tabs>
+
+
+
+
+
+    <!--
+    <div class="card mt-3 mb-4 ">
+      <div class="card-header font-weight-bold">
+        Analysis
+      </div>
+      <div class="card-body">
+
+        <div id="tester" style="width:600px;height:250px;"></div>
+
+      </div>
+    </div>
+
+
+    <button @click="makeToast('mytitle', 'mytext')">toaster</button>
+  -->
+
+  </div>
+
+
+
+  <script>
+
+    /*
+    TESTER = document.getElementById('tester');
+    Plotly.plot(TESTER, [{
+      x: [1, 2, 3, 4, 5],
+      y: [1, 2, 4, 8, 16]
+    }], {
+        margin: { t: 0 }
+      });
+    */
+
+    var app = new Vue(
+      {
+        el: "#ui-app",
+        data: {
+          app_name: "glaDIAtor",
+
+          files: {
+
+            "samples": [],
+            "library": [],
+            "database": []
+          },
+
+          annotation_template: {
+            "chosen_key": null,
+          },
+
+          annotations: {},
+
+          annotation_config: {
+            "filename": null,
+            "tsv_id_options": null,
+            "tsv_id_selected": null,
+            "assign_ambiguous": true,
+            "merge_unimods": false,
+          },
+
+          analysis_name: "",
+
+          pvalue: 0.01,
+          trig_target_pvalue: 0.01,
+          trig_max_pvalue: 0.05,
+          precursor_tolerance: 10,
+          fragment_tolerance: 0.02,
+          threads: 1,
+
+          selected: ["use_xtandem_flag", "use_comet_flag"],
+
+          options: [
+            { text: 'Use X!Tandem search engine', value: 'use_xtandem_flag' },
+            { text: 'Use Comet search engine', value: 'use_comet_flag' },
+            { text: 'DDA library', value: 'dda_library' },
+            { text: 'Annotate peptides', value: 'annotate_peptides' },
+            { text: 'Set CPU thread count manually', value: 'force_threads' },
+          ],
+
+          progress: {},
+
+          projects: [],
+
+          status: {},
+
+          polling: null,
+          slowPolling: null,
+
+        },
+
+        methods: {
+
+          isAnalysisRunning: function (project) {
+            if (project in this.progress) {
+              if ("analysis" in this.progress[project]) {
+                return true;
+              }
+            }
+            return false;
+          },
+
+          isAnyProjectAnalysisRunning: function () {
+            for (project in this.progress) {
+              if ("analysis" in this.progress[project]) {
+                return true;
+              }
+            }
+            return false;
+          },
+
+
+          get_notifications: function () {
+            fetch("get_notifications", {
+              body: JSON.stringify({ "id": "0" }),
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+              },
+            })
+              .then(response => response.json()).then((json_data) => {
+                for (var i in json_data) {
+                  entry = json_data[i];
+                  this.makeToast(entry["title"], entry["text"]);
+                }
+              })
+          },
+
+          makeToast: function (title, text) {
+            this.$bvToast.toast(text, {
+              title: title,
+              noAutoHide: true,
+            })
+          },
+
+          callback: function (filename) {
+            this.get_tsv_headers(filename)
+          },
+
+          get_tsv_headers: function (filename) {
+            fetch("get_tsv_headers", {
+              body: JSON.stringify({ "file": filename }),
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+              },
+            })
+              .then(response => response.json()).then((json_data) => {
+                // this.annotation_config['tsv_id_options'] = [{ "value": null, "text": "Select ID field" }];
+                this.annotation_config['tsv_id_options'] = [];
+                for (var i in json_data) {
+                  tsv_id = json_data[i];
+                  this.annotation_config['tsv_id_options'].push({ "value": tsv_id, "text": tsv_id });
+                }
+              })
+
+          },
+
+          load_config: function (analysis_name) {
+
+            runSettings = {
+              "analysis_name": analysis_name,
+            }
+
+            fetch("load_config", {
+              body: JSON.stringify(runSettings),
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+              },
+            })
+              .then(response => response.json()).then((json_data) => {
+                this.analysis_name = json_data["config"]["analysis_name"];
+                this.files = json_data["config"]["files"]
+                this.pvalue = json_data["config"]["pvalue"] 
+                this.trig_target_pvalue = json_data["config"]["trig_target_pvalue"]
+                this.trig_max_pvalue = json_data["config"]["trig_max_pvalue"] 
+                this.precursor_tolerance = json_data["config"]["precursor_tolerance"] 
+                this.fragment_tolerance = json_data["config"]["fragment_tolerance"]
+                this.threads = json_data["config"]["threads"] 
+                this.selected = json_data["config"]["options"] 
+                this.annotation_config.filename = json_data["config"]["annotation_filename"]
+                this.annotation_config.tsv_id_selected = json_data["config"]["annotation_id_column"] 
+                this.annotation_config.assign_ambiguous = json_data["config"]["annotation_assign_ambiguous"]
+                this.annotation_config.merge_unimods = json_data["config"]["annotation_merge_unimods"]
+              })
+
+          },
+
+          run: function () {
+
+            runSettings = {
+
+              "analysis_name": this.analysis_name,
+              "files": this.files,
+              "pvalue": this.pvalue,
+              "trig_target_pvalue": this.trig_target_pvalue,
+              "trig_max_pvalue": this.trig_max_pvalue,
+              "precursor_tolerance": this.precursor_tolerance,
+              "fragment_tolerance": this.fragment_tolerance,
+              "threads": this.threads,
+              "options": this.selected,
+              "annotation_filename": this.annotation_config.filename,
+              "annotation_id_column": this.annotation_config.tsv_id_selected,
+              "annotation_assign_ambiguous": this.annotation_config.assign_ambiguous,
+              "annotation_merge_unimods": this.annotation_config.merge_unimods,
+          },
+
+            fetch("run", {
+              body: JSON.stringify(runSettings),
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+              },
+            })
+              .then(response => response.json()).then((json_data) => {
+                return_value = json_data;
+              })
+
+          },
+
+          rerun: function (analysis_name) {
+
+            runSettings = {
+              "analysis_name": analysis_name,
+            }
+
+            fetch("rerun", {
+              body: JSON.stringify(runSettings),
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+              },
+            })
+              .then(response => response.json()).then((json_data) => {
+                return_value = json_data;
+              })
+
+          },
+
+          cancel_analysis: function (project) {
+            fetch("cancel_analysis", {
+              body: JSON.stringify({ "project": project }),
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+              },
+            })
+              .then(response => response.json()).then((json_data) => {
+                // status = json_data;
+              })
+          },
+
+          render_figure: function (project, field) {
+            fetch("render_figure", {
+              body: JSON.stringify({ "project": project, "field":field }),
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+              },
+            })
+              .then(response => response.json()).then((json_data) => {
+                // this.figure_fields = json_data;
+              })
+          },
+
+
+          loadData: function () {
+            fetch("get_progress", {
+              body: JSON.stringify({ "id": "0" }),
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+              },
+            })
+              .then(response => response.json()).then((json_data) => {
+                this.progress = json_data;
+              })
+          },
+
+          loadStatus: function () {
+            fetch("get_status", {
+              body: JSON.stringify({ "id": "0" }),
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+              },
+            })
+              .then(response => response.json()).then((json_data) => {
+                this.status = json_data;
+              })
+          },
+
+          list_projects: function () {
+            fetch("list_projects", {
+              body: JSON.stringify({ "id": "1" }),
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+              },
+            })
+              .then(response => response.json()).then((json_data) => {
+                this.projects = json_data;
+
+                for (var i in this.projects) {
+                  project = this.projects[i];
+
+                  folder = project['folder'];
+                  if (!(folder in this.annotations)) {
+                    this.annotations[folder] = JSON.parse(JSON.stringify(this.annotation_template));
+                    this.annotations[folder]['folder'] = folder;
+                  }
+
+                }
+
+              })
+          },
+
+          remove_analysisfolder: function (foldername) {
+            if (foldername) {
+              fetch("remove_analysisrun", {
+                body: JSON.stringify({ "folder": foldername }),
+                method: "PUT",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+              })
+                .then(response => response.json()).then((json_data) => {
+                  status = json_data["Status"];
+                  // status should be "Success / Failed"
+                  this.list_projects(); // update list after delete
+                })
+            }
+          },
+
+          isPositiveNaturalNumber(val) {
+            var isInt = /^\d+$/.test(val);
+            if (isInt && val > 0) {
+              return true;
+            }
+            return false;
+          },
+
+          isNumeric(val) {
+            var isInt = /^\d+$/.test(val);
+            var isFloat = /^\d+\.\d+$/.test(val);
+            if (!(isInt | isFloat)) {
+              return false;
+            }
+            return true;
+          },
+
+          isPvalue(pval) {
+
+            var isNumber = /^\d+\.\d+$/.test(pval);
+            if (!isNumber) {
+              return false;
+            }
+
+            var value = Number.parseFloat(pval);
+
+            if (Number.isNaN(value)) {
+              return false;
+            }
+
+            if (value >= 0 && value <= 1) {
+              return true;
+            }
+
+            return false;
+          },
+
+          no_forbidden_characters(text_string) {
+
+            if (/\s/.test(text_string)) {
+              return false;
+            }
+
+            if (text_string.includes('*')) {
+              return false;
+            }
+
+            if (text_string.includes('/')) {
+              return false;
+            }
+
+            return true;
+          },
+
+
+        },
+
+        mounted: function () {
+          this.polling = setInterval(function () {
+            this.loadData();
+            this.loadStatus();
+            this.list_projects();
+          }.bind(this), 1000);
+
+          this.slowPolling = setInterval(function () {
+            this.get_notifications();
+          }.bind(this), 5000);
+
+        },
+
+        beforeDestroy: function () {
+          clearInterval(this.polling)
+        },
+
+        computed: {
+
+        },
+
+
+      });
+
+    Vue.config.devtools = true;
+
+
+    Vue.component('file-browser', {
+
+      created() {
+        this.list(this.path_to_str(this.path_vec));
+      },
+
+
+      props: {
+        filesetname: String,
+        title: String,
+        description: String,
+        filelist_desc: String,
+      },
+
+
+      template: `  
+        <div>
+
+        <div class="card">
+          <div class="card-header font-weight-bold">
+            {{title}} <i class="fas fa-info-circle" v-b-tooltip.hover :title=description></i>
+          </div>
+          <div class="card-body">
+
+              <table class="table table-striped">
+                <tbody>
+                  <template v-for="(item, index) in app.files[this.filesetname]">
+                    <tr>
+                      <th scope="row">{{index+1}}</th>
+                      <td>{{item}}</td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+
+              <b-input-group class="mb-3">
+                <b-button variant="primary" v-b-modal.browsermodal> <i class="fas fa-file-import"></i> Choose Files</b-button>
+                <b-button style="float: left;" variant="warning" @click="app.files[filesetname]=[]"> <i class="fas fa-broom"></i> Clear</b-button>
+              </b-input-group>
+
+          </div>
+
+        </div>
+
+
+
+        <b-modal hide-footer id="browsermodal" title="Choose Files" @ok="send_selections()">
+          <h5>
+            <b-button size="sm" @click="folder_up()"> <i class="fas fa-arrow-up"></i> </b-button> 
+            {{ this.path_to_str(path_vec) }}
+          </h5>
+            
+            <hr>
+
+            <div id="" style="overflow:scroll; height:350px;">
+              <input type="checkbox" name="master_checkbox" @change="master_checkbox_clicked()" v-model="master_checkbox_value">
+              <ul id="selectionList" style="list-style-type: none; padding-left: 0">
+                <li v-for="entry in this.listing">
+                  <div display:inline-block v-if="entry.type === 'folder'">
+                    <i class="fas fa-folder"></i>
+                    <a v-on:click="folder_down(entry['basename'])" href="#">{{ entry.basename }}</a>
+                  </div>
+                  <div display:inline-block v-else>
+                    <input type="checkbox" name="myname" value="myvalue" @change="folder_select_action()" v-model="entry.selected">
+                    {{ entry.basename }}
+                  </div>
+                </li>
+              </ul>
+            </div>
+          <b-button block variant="primary" block @click="$bvModal.hide('browsermodal')">Done</b-button>
+
+        </b-modal>
+      </div>
+
+      `,
+
+      data: function () {
+        return {
+          path_vec: [],
+          listing: [],
+        }
+      },
+      computed: {
+        master_checkbox_value: {
+          get: function () {
+            var files = 0;
+            var checked_files = 0;
+            for (var i in this.listing) {
+              if (this.listing[i]['type'] == 'file') {
+                files += 1;
+                if (this.listing[i]['selected']) {
+                  checked_files += 1;
+                }
+              }
+            }
+            return_value = (files > 0 && files == checked_files)
+            return return_value;
+          },
+          set: function (value) {
+            for (var i in this.listing) {
+              this.listing[i]['selected'] = value;
+            }
+          },
+        },
+
+      },
+      methods: {
+
+        master_checkbox_clicked: function () {
+          this.send_selections();
+        },
+
+        path_to_str: function (path_vec) {
+          if (path_vec.length == 0) {
+            return "/";
+          } else {
+            return ("/" + path_vec.join("/") + "/");
+          }
+        },
+
+        list: function (path_str) {
+          fetch("list", {
+            body: JSON.stringify(path_str),
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+          })
+            .then(response => response.json()).then((json_data) => {
+              this.listing = json_data["files"];
+              this.synchronize_checked();
+            })
+        },
+
+        synchronize_checked: function () {
+          for (var i in this.listing) {
+            if (this.listing[i]['type'] == 'file') {
+              fullpath = this.listing[i]['fullpath'];
+              app_entry = app.files[this.filesetname].find(
+                function (element) {
+                  return (element == fullpath);
+                });
+              if (app_entry) {
+                this.listing[i]['selected'] = true;
+              }
+            }
+          }
+        },
+
+        folder_up() {
+          if (this.path_vec.length > 0) {
+            this.path_vec.pop();
+          }
+          path_str = this.path_to_str(this.path_vec);
+          this.list(path_str);
+          return;
+        },
+
+        folder_down: function (folder) {
+          this.path_vec.push(folder);
+          path_str = this.path_to_str(this.path_vec);
+          this.list(path_str);
+          return;
+        },
+
+
+        folder_select_action: function () {
+          this.send_selections();
+        },
+
+        send_selections: function () {
+          selected = [];
+          unselected = [];
+
+          for (var i in this.listing) {
+            entry = this.listing[i];
+            if (entry['type'] == 'file') {
+              if (entry['selected'] == true) {
+                selected.push(entry['fullpath']);
+              } else {
+                unselected.push(entry['fullpath']);
+              }
+            }
+          }
+
+          for (i in unselected) {
+            app_entry = app.files[this.filesetname].find(
+              function (element) {
+                return (element == unselected[i]);
+              });
+            if (app_entry) {
+              app.files[this.filesetname] = app.files[this.filesetname].filter(value => value != app_entry);
+            }
+          }
+
+          for (i in selected) {
+            app_entry = app.files[this.filesetname].find(
+              function (element) {
+                return (element == selected[i]);
+              });
+            if (!app_entry) {
+              app.files[this.filesetname].push(selected[i]);
+            }
+          }
+
+        },
+
+
+
+
+      }
+
+
+    })
+
+    var sample_file_browser = new Vue({ el: '#sample-file-browser-component' })
+    var library_file_browser = new Vue({ el: '#library-file-browser-component' })
+    var database_file_browser = new Vue({ el: '#database-file-browser-component' })
+
+
+    Vue.component('single-file-selector', {
+
+      created() {
+        this.list(this.path_to_str(this.path_vec));
+      },
+
+      props: {
+        title: String,
+      },
+
+      template: `  
+        <div>
+        <b-modal hide-footer id="browsermodal" title="Choose File" @ok="">
+          <h5>
+            <b-button size="sm" @click="folder_up()"> <i class="fas fa-arrow-up"></i> </b-button> 
+            {{ this.path_to_str(path_vec) }}
+          </h5>
+            <hr>
+            <div id="" style="overflow:scroll; height:350px;">
+              <ul id="selectionList" style="list-style-type: none; padding-left: 0">
+                <li v-for="entry in this.listing">
+                  <div display:inline-block v-if="entry.type === 'folder'">
+                    <i class="fas fa-folder"></i>
+                    <a v-on:click="folder_down(entry['basename'])" href="#">{{ entry.basename }}</a>
+                  </div>
+                  <div display:inline-block v-else>
+                    <input type="radio" name="radiobutton" :value="entry.fullpath" v-model="app.annotation_config['filename']" @change="$emit('callback', entry.fullpath)">
+                    {{ entry.basename }}
+                  </div>
+                </li>
+              </ul>
+            </div>
+          <b-button block variant="primary" block @click="$bvModal.hide('browsermodal')">Done</b-button>
+        </b-modal>
+
+      </div>
+
+      `,
+
+      data: function () {
+        return {
+          path_vec: [],
+          listing: [],
+          selected_file: null,
+        }
+      },
+      computed: {
+
+      },
+      methods: {
+
+        path_to_str: function (path_vec) {
+          if (path_vec.length == 0) {
+            return "/";
+          } else {
+            return ("/" + path_vec.join("/") + "/");
+          }
+        },
+
+        list: function (path_str) {
+          fetch("list", {
+            body: JSON.stringify(path_str),
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+          })
+            .then(response => response.json()).then((json_data) => {
+              this.listing = json_data["files"];
+            })
+        },
+
+        synchronize_checked: function () {
+          for (var i in this.listing) {
+            if (this.listing[i]['type'] == 'file') {
+              fullpath = this.listing[i]['fullpath'];
+              app_entry = app.files[this.filesetname].find(
+                function (element) {
+                  return (element == fullpath);
+                });
+              if (app_entry) {
+                this.listing[i]['selected'] = true;
+              }
+            }
+          }
+        },
+
+        folder_up() {
+          if (this.path_vec.length > 0) {
+            this.path_vec.pop();
+          }
+          path_str = this.path_to_str(this.path_vec);
+          this.list(path_str);
+          return;
+        },
+
+        folder_down: function (folder) {
+          this.path_vec.push(folder);
+          path_str = this.path_to_str(this.path_vec);
+          this.list(path_str);
+          return;
+        },
+
+      }
+
+    })
+
+    var annotation_file_browser = new Vue({ el: '#annotation-file-browser-component' })
+
+
+  </script>
+
+
+</body>
+
+</html>
