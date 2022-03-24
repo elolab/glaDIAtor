@@ -32,6 +32,11 @@ Then, deploy glaDIAtor in server mode and expose input files and result storage 
 ```
 Note: Single workstation deployment is done by switching from server.ini to workstation.ini. Furthermore,--network="host" parameter is omitted. When running container as normal user (supported by Podman container technology), the listening port should be exported to high range with -p 8080:80. 
 
+On Windows 10 platform, following command can be used to start glaDIAtor after which glaDIAtor can be accessed from web browser: http://localhost . Following command makes C:\run-files and C:\data folders available to glaDIAtor. 
+```
+docker run --name gladiator -d --rm -v //c/run-files:/run-files/ -v //c/data:/data -p 80:80 elolab/gladiator pserve /opt/gladiator/UI/server.ini
+```
+
 ### Access glaDIAtor
 
 After the container is deployed, the glaDIAtor can be accessed by typing the server name to web browser. On workstation deployments, glaDIAtor can be accessed by typing http://localhost (or http://localhost:8080) to web browser address bar. The difference between server and workstation deployments is that with the workstation deployment the GUI can only be accessed from the machine running glaDIAtor.
